@@ -21,7 +21,7 @@ services:
       retries: 30
 
     volumes:
-      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/paperclip/postgres:/var/lib/postgresql/data
+      - /home/{{ username }}/user_projects/instance/{{ uuid }}/paperclip/postgres:/var/lib/postgresql/data
 
     networks:
       - ai-net
@@ -32,11 +32,11 @@ services:
     command: ["chown", "-R", "1000:1000", "/paperclip"]
 
     volumes:
-      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/paperclip/data:/paperclip
+      - /home/{{ username }}/user_projects/instance/{{ uuid }}/paperclip/data:/paperclip
 
   paperclip:
     build:
-      context: /home/{{ username }}/sahil/projects/repo-paperclip/paperclip
+      context: /home/{{ username }}/user_projects/repo-paperclip/paperclip
       dockerfile: Dockerfile
 
     container_name: paperclip_{{ uuid }}
@@ -58,13 +58,13 @@ services:
       PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
      # PAPERCLIP_PUBLIC_URL: "https://paperclip.abhinavs.xyz"
-      PAPERCLIP_ALLOWED_HOSTNAMES: "192.168.255.72"
-      BETTER_AUTH_SECRET: "thisisdefinetlysecret"
+      PAPERCLIP_ALLOWED_HOSTNAMES: "<server_ip_here>"
+      BETTER_AUTH_SECRET: "<your_better_auth_secret_here>"
       CLAUDE_CODE_OAUTH_TOKEN: <your_token_here>
       DISCORD_BOT_TOKEN: <your_token_here>
       DISCORD_ALLOWED_USERS: <allowed_user_comma_seprated>
     volumes:
-      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/paperclip/data:/paperclip
+      - /home/{{ username }}/user_projects/instance/{{ uuid }}/paperclip/data:/paperclip
     networks:
       - ai-net
 
@@ -81,12 +81,12 @@ services:
       HERMES_DASHBOARD: "1"
       HERMES_DASHBOARD_HOST: "0.0.0.0"
       HERMES_DASHBOARD_INSECURE: "1"
-      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: "sahil"
-      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: "sahil123"
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: "<your_username_here>"
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: "<your_password_here>"
 
     volumes:
-      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/hermes/data:/opt/data/
-      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/config/hermes/auth.json:/opt/data/auth.json
+      - /home/{{ username }}/user_projects/instance/{{ uuid }}/hermes/data:/opt/data/
+      - /home/{{ username }}/user_projects/instance/{{ uuid }}/config/hermes/auth.json:/opt/data/auth.json
     networks:
       - ai-net
 

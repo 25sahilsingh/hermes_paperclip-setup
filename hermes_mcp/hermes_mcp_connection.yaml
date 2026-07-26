@@ -51,7 +51,7 @@
               args:
                 - \"{{ install_dir }}/dist/index.js\"
               env:
-                PAPERCLIP_API_BASE_URL: "http://192.168.255.72:{{ paperclip_port }}"
+                PAPERCLIP_API_BASE_URL: "http://<server_ip_here>:{{ paperclip_port }}"
                 PAPERCLIP_API_KEY: \"{{ api }}\"
           EOF"
 

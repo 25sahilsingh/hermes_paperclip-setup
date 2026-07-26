@@ -3,7 +3,7 @@
   become: true
 
   vars:
-    compose_dir: "/home/abhinav/sahil/projects/instance/{{ uuid }}"
+    compose_dir: "/home/{{ username }}/user_projects/instance/{{ uuid }}"
     compose_file: "{{ compose_dir }}/docker-compose.yaml"
 
   tasks:

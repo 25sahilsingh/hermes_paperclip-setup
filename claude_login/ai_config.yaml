@@ -157,7 +157,7 @@
 #below are real deal
     - name: Create directory
       ansible.builtin.file:
-        path: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/"
+        path: "/home/{{ username }}/user_projects/instance/{{ uuid }}/"
         state: directory
         mode: "0755"
 
@@ -165,20 +165,20 @@
     - name: Generate docker compose file
       ansible.builtin.template:
         src: docker-compose.yaml.j2
-        dest: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/docker-compose.yaml"
+        dest: "/home/{{ username }}/user_projects/instance/{{ uuid }}/docker-compose.yaml"
         mode: "0644"
 
 
     - name: Create hermes config directory
       ansible.builtin.file:
-        path: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/config/hermes/"
+        path: "/home/{{ username }}/user_projects/instance/{{ uuid }}/config/hermes/"
         state: directory
         mode: "0755"
 
     - name: Transfer Hermes auth
       ansible.builtin.copy:
-        src: /home/sahil/.hermes/auth.json
-        dest: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/config/hermes/auth.json"
+        src: /home/{{ username }}/.hermes/auth.json
+        dest: "/home/{{ username }}/user_projects/instance/{{ uuid }}/config/hermes/auth.json"
         mode: "0600"
     - name: Start containers
       ansible.builtin.command:
@@ -197,11 +197,11 @@
              else []
            )
          }}
-        chdir: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}"
+        chdir: "/home/{{ username }}/user_projects/instance/{{ uuid }}"
 
     - name: Wait for Hermes config.yaml to be created
       ansible.builtin.wait_for:
-        path: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/hermes/data/config.yaml"
+        path: "/home/{{ username }}/user_projects/instance/{{ uuid }}/hermes/data/config.yaml"
         timeout: 60
 
     - name: Set model default to gpt in config.yaml
@@ -227,7 +227,7 @@
         }
         ' "$CONFIG" > "$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
       environment:
-        CONFIG: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/hermes/data/config.yaml"
+        CONFIG: "/home/{{ username }}/user_projects/instance/{{ uuid }}/hermes/data/config.yaml"
     - name: print uuid 
       ansible.builtin.debug:
         msg: "container uuid: {{ uuid }}"
