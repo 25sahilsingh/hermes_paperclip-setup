@@ -1,0 +1,72 @@
+---
+
+- name: Configure git login auth
+  hosts: servers
+  become: true
+
+  vars:
+    compose_dir: "/home/abhinav/sahil/projects/instance/{{ uuid }}"
+    compose_file: "{{ compose_dir }}/docker-compose.yaml"
+
+  tasks:
+    - name: Ensure uuid was provided
+      ansible.builtin.assert:
+        that:
+          - uuid is defined
+          - uuid | length > 0
+        fail_msg: 'Please provide -e "uuid=<uuid>"'
+
+    - name: Ensure oauth_token was provided
+      ansible.builtin.assert:
+        that:
+          - oauth_token is defined
+          - oauth_token | length > 0
+        fail_msg: 'Please provide -e "oauth_token=<token>"'
+
+    - name: Verify compose file exists
+      ansible.builtin.stat:
+        path: "{{ compose_file }}"
+      register: compose_stat
+
+    - name: Fail if compose file does not exist
+      ansible.builtin.fail:
+        msg: "Compose file not found: {{ compose_file }}"
+      when: not compose_stat.stat.exists
+
+    - name: Update GH TOKEN
+      ansible.builtin.replace:
+        path: "{{ compose_file }}"
+        regexp: '^\s*GH_TOKEN:.*$'
+        replace: '      GH_TOKEN: "{{ oauth_token }}"'
+
+    - name: Recreate paperclip container
+      ansible.builtin.command:
+        cmd: docker compose up -d paperclip
+        chdir: "{{ compose_dir }}"
+
+    - name: Wait until paperclip container is running
+      ansible.builtin.command:
+        cmd: docker compose ps -q paperclip
+        chdir: "{{ compose_dir }}"
+      register: paperclip_container
+      retries: 30
+      delay: 2
+      until: paperclip_container.stdout | length > 0
+
+    - name: Wait until container is healthy/running
+      ansible.builtin.command:
+        cmd: >
+          docker inspect
+          -f '{{ "{{" }}.State.Running{{ "}}" }}'
+          {{ paperclip_container.stdout }}
+      register: container_state
+      retries: 30
+      delay: 2
+      until: container_state.stdout == "true"
+
+    - name: Configure Git to use GitHub CLI credentials
+      ansible.builtin.command:
+        cmd: >
+          docker exec
+          {{ paperclip_container.stdout }}
+          gh auth setup-git

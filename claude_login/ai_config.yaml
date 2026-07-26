@@ -1,0 +1,234 @@
+---
+- name: Deploy Docker application
+  hosts: servers
+  become: yes
+  gather_facts: yes
+
+#   variables
+
+  vars:
+    username: "abhinav"
+    force_restart: 0
+
+  tasks:
+    - name: Generate UUID
+      ansible.builtin.set_fact:
+        uuid: "{{ (lookup('pipe', 'date +%s%N') ~ (1000000000000 | random)) | to_uuid }}"
+      when: force_restart | int == 0
+
+    - name: Use existing UUID
+      ansible.builtin.set_fact:
+        uuid: "{{ force_restart }}"
+      when: force_restart | int != 0
+
+    - name: Gather listening ports
+      community.general.listen_ports_facts:
+      when: force_restart | int == 0
+
+    - name: Build list of used ports
+      ansible.builtin.set_fact:
+        used_ports: >-
+          {{
+            (ansible_facts.tcp_listen + ansible_facts.udp_listen)
+            | map(attribute='port')
+            | unique
+            | list
+          }}
+      when: force_restart | int == 0
+      
+    - name: Find next available ports
+      ansible.builtin.set_fact:
+        hermes_port: >-
+          {{
+            range(9000, 9101)
+            | reject('in', used_ports)
+            | first
+          }}
+        hermes_gateway_port: >-
+          {{
+            range(9100, 9201)
+            | reject('in', used_ports)
+            | first
+          }}
+        paperclip_port: >-
+          {{
+            range(8000, 8101)
+            | reject('in', used_ports)
+            | first
+          }}
+      when: force_restart | int == 0
+
+    - name: Get infos on container
+      community.docker.docker_container_info:
+        name: hermes_{{ uuid }}
+      register: hermes_result
+      when: force_restart | int != 0
+    - name: Set hermes port
+      ansible.builtin.set_fact:
+        hermes_port: "{{ hermes_result.container.NetworkSettings.Ports['9119/tcp'][0].HostPort }}"
+        hermes_gateway_port: "{{ hermes_result.container.NetworkSettings.Ports['8642/tcp'][0].HostPort }}"
+      when: force_restart | int != 0
+    - name: Get infos on container
+      community.docker.docker_container_info:
+        name: paperclip_{{ uuid }}
+      register: paperclip_result
+      when: force_restart | int != 0
+
+    - name: Set paperclip port
+      ansible.builtin.set_fact:
+        paperclip_port: "{{ paperclip_result.container.NetworkSettings.Ports['3100/tcp'][0].HostPort }}"
+      when: force_restart | int != 0
+
+    - name: Remove old Docker packages if present
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-compose
+          - docker-compose-v2
+          - docker-doc
+          - podman-docker
+          - containerd
+          - runc
+        state: absent
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install prerequisite packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+
+    - name: Create apt keyrings directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download Docker GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Get system architecture
+      ansible.builtin.command:
+        cmd: dpkg --print-architecture
+      register: docker_arch
+      changed_when: false
+
+    - name: Configure Docker repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/docker.sources
+        mode: "0644"
+        content: |
+          Types: deb
+          URIs: https://download.docker.com/linux/ubuntu
+          Suites: {{ ansible_distribution_release }}
+          Components: stable
+          Architectures: {{ docker_arch.stdout }}
+          Signed-By: /etc/apt/keyrings/docker.asc
+
+    - name: Update apt cache after adding Docker repository
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install Docker packages
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Start and enable Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: yes
+
+
+
+#below are real deal
+    - name: Create directory
+      ansible.builtin.file:
+        path: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/"
+        state: directory
+        mode: "0755"
+
+
+    - name: Generate docker compose file
+      ansible.builtin.template:
+        src: docker-compose.yaml.j2
+        dest: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/docker-compose.yaml"
+        mode: "0644"
+
+
+    - name: Create hermes config directory
+      ansible.builtin.file:
+        path: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/config/hermes/"
+        state: directory
+        mode: "0755"
+
+    - name: Transfer Hermes auth
+      ansible.builtin.copy:
+        src: /home/sahil/.hermes/auth.json
+        dest: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/config/hermes/auth.json"
+        mode: "0600"
+    - name: Start containers
+      ansible.builtin.command:
+        argv: >-
+         {{
+           [
+             'docker',
+             'compose',
+             'up',
+             '-d'
+           ]
+           +
+           (
+             ['--force-recreate']
+             if force_restart | int != 0
+             else []
+           )
+         }}
+        chdir: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}"
+
+    - name: Wait for Hermes config.yaml to be created
+      ansible.builtin.wait_for:
+        path: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/hermes/data/config.yaml"
+        timeout: 60
+
+    - name: Set model default to gpt in config.yaml
+      ansible.builtin.shell: |
+        awk '
+        NR <= 5 && /^model:[[:space:]]*$/ && !done {
+            print "model:"
+            print "  default: gpt-5.5"
+            print "  provider: openai-codex"
+            print "  base_url: '\'''\''"
+            done = 1
+            in_model = 1
+            next
+        }
+
+        in_model && /^[[:space:]]+(default|provider|base_url):/ {
+            next
+        }
+
+        {
+            in_model = 0
+            print
+        }
+        ' "$CONFIG" > "$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
+      environment:
+        CONFIG: "/home/{{ username }}/sahil/projects/instance/{{ uuid }}/hermes/data/config.yaml"
+    - name: print uuid 
+      ansible.builtin.debug:
+        msg: "container uuid: {{ uuid }}"
+        

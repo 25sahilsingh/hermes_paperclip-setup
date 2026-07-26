@@ -1,0 +1,5 @@
+[servers]
+abhi_server ansible_user=abhinav
+
+[hermes]
+abhi_server ansible_user=abhinav

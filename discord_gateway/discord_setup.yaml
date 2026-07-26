@@ -1,0 +1,56 @@
+- name: Adding discord token and allowed users
+  hosts: servers
+  become: true
+
+  vars:
+    compose_dir: "/home/abhinav/sahil/projects/instance/{{ uuid }}"
+    compose_file: "{{ compose_dir }}/docker-compose.yaml"
+
+  tasks:
+    - name: Ensure uuid was provided
+      ansible.builtin.assert:
+        that:
+          - uuid is defined
+          - uuid | length > 0
+        fail_msg: 'Please provide -e "uuid=<uuid>"'
+
+    - name: Ensure discord was provided
+      ansible.builtin.assert:
+        that:
+          - discord_token is defined
+          - discord_token | length > 0
+        fail_msg: 'Please provide -e "discord_token=<token>"'
+    - name: Ensure allowed user was provided
+      ansible.builtin.assert:
+        that:
+          - allowed_user is defined
+          - allowed_user | length > 0
+        fail_msg: 'Please provide -e "allowed_user=<user_id-comma_seprated>"'
+
+    - name: Verify compose file exists
+      ansible.builtin.stat:
+        path: "{{ compose_file }}"
+      register: compose_stat
+
+    - name: Fail if compose file does not exist
+      ansible.builtin.fail:
+        msg: "Compose file not found: {{ compose_file }}"
+      when: not compose_stat.stat.exists
+
+    - name: Update DISCORD_BOT_TOKEN
+      ansible.builtin.replace:
+        path: "{{ compose_file }}"
+        regexp: '^\s*DISCORD_BOT_TOKEN:.*$'
+        replace: '      DISCORD_BOT_TOKEN: "{{ discord_token }}"'
+
+    - name: Update DISCORD_ALLOWED_USERS
+      ansible.builtin.replace:
+        path: "{{ compose_file }}"
+        regexp: '^\s*DISCORD_ALLOWED_USERS:.*$'
+        replace: '      DISCORD_ALLOWED_USERS: "{{ allowed_user }}"'
+
+    - name: Recreate hermes container
+      ansible.builtin.command:
+        cmd: docker compose up -d hermes
+        chdir: "{{ compose_dir }}"
+

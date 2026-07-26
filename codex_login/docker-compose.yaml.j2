@@ -1,0 +1,92 @@
+networks:
+  ai-net:
+    name: ai-net_{{ uuid }}
+    driver: bridge
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: paperclip-db_{{ uuid }}
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: paperclip
+      POSTGRES_PASSWORD: paperclip
+      POSTGRES_DB: paperclip
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperclip -d paperclip"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+    volumes:
+      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/paperclip/postgres:/var/lib/postgresql/data
+
+    networks:
+      - ai-net
+
+  paperclip-init:
+    image: alpine:3
+    container_name: paperclip-init_{{ uuid }}
+    command: ["chown", "-R", "1000:1000", "/paperclip"]
+
+    volumes:
+      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/paperclip/data:/paperclip
+
+  paperclip:
+    build:
+      context: /home/{{ username }}/sahil/projects/repo-paperclip/paperclip
+      dockerfile: Dockerfile
+
+    container_name: paperclip_{{ uuid }}
+    restart: unless-stopped
+
+    depends_on:
+      db:
+        condition: service_healthy
+      paperclip-init:
+        condition: service_completed_successfully
+
+    ports:
+      - "{{ paperclip_port }}:3100"
+
+    environment:
+      DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip
+      PORT: "3100"
+      SERVE_UI: "true"
+      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
+     # PAPERCLIP_PUBLIC_URL: "https://paperclip.abhinavs.xyz"
+      PAPERCLIP_ALLOWED_HOSTNAMES: "192.168.255.72"
+      BETTER_AUTH_SECRET: "thisisdefinetlysecret"
+      CLAUDE_CODE_OAUTH_TOKEN: <your_token_here>
+      DISCORD_BOT_TOKEN: <your_token_here>
+      DISCORD_ALLOWED_USERS: <allowed_user_comma_seprated>
+    volumes:
+      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/paperclip/data:/paperclip
+    networks:
+      - ai-net
+
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes_{{ uuid }}
+    restart: unless-stopped
+    command: gateway run
+    ports:
+      - "{{ hermes_gateway_port }}:8642"
+      - "{{ hermes_port }}:9119"
+
+    environment:
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: "0.0.0.0"
+      HERMES_DASHBOARD_INSECURE: "1"
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: "sahil"
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: "sahil123"
+
+    volumes:
+      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/hermes/data:/opt/data/
+      - /home/{{ username }}/sahil/projects/instance/{{ uuid }}/config/hermes/auth.json:/opt/data/auth.json
+    networks:
+      - ai-net
+

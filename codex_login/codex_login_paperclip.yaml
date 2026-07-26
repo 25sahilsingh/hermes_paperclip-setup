@@ -1,0 +1,79 @@
+---
+- name: Codex login
+  hosts: servers
+  become: true
+
+  tasks:
+    - name: Ensure uuid was provided
+      ansible.builtin.assert:
+        that:
+          - uuid is defined
+          - uuid | length > 0
+        fail_msg: 'Please provide a UUID using -e "uuid=<container_uuid>"'
+
+    - name: Remove old login log
+      ansible.builtin.command:
+        cmd: docker exec paperclip_{{ uuid }} rm -f /tmp/codex_login.log
+      ignore_errors: true
+
+    - name: Ensure .codex dir is owned by the app user (node / uid 1000)
+      # The paperclip app runs as uid 1000 (node) with HOME=/paperclip. Prior
+      # root-run logins left /paperclip/.codex owned by root (755), so a login
+      # run as node couldn't write auth.json into it. Fix ownership first.
+      ansible.builtin.command:
+        cmd: >
+          docker exec paperclip_{{ uuid }}
+          sh -c 'mkdir -p /paperclip/.codex && chown -R 1000:1000 /paperclip/.codex'
+
+    - name: Start Codex login asynchronously
+      # Run as the app user (node / uid 1000), not root, so the token lands in
+      # /paperclip/.codex/auth.json owned by node — the file the paperclip app
+      # actually reads. /paperclip is bind-mounted, so it survives recreate.
+      ansible.builtin.shell: >
+        docker exec -u 1000:1000 -e HOME=/paperclip paperclip_{{ uuid }}
+        sh -c 'codex login --device-auth > /tmp/codex_login.log 2>&1'
+      async: 1800
+      poll: 0
+      register: codex_login_job
+
+    - name: Wait until device code appears
+      ansible.builtin.command:
+        cmd: docker exec paperclip_{{ uuid }} cat /tmp/codex_login.log
+      register: login_output
+      retries: 30
+      delay: 1
+      until: >
+        (login_output.stdout |
+        regex_replace('\x1b\[[0-9;]*m', ''))
+        is search('[A-Z0-9]{4}-[A-Z0-9]{5}')
+
+    - name: Show login instructions
+      ansible.builtin.debug:
+        msg: >-
+          Open https://auth.openai.com/codex/device
+          and enter code {{
+            login_output.stdout
+            | regex_replace('\x1b\[[0-9;]*m', '')
+            | regex_search('[A-Z0-9]{4}-[A-Z0-9]{5}')
+          }}
+
+    - name: Show raw login output
+      ansible.builtin.debug:
+        msg: "{{ login_output.stdout }}"
+
+    - name: Wait for user to complete login
+      ansible.builtin.async_status:
+        jid: "{{ codex_login_job.ansible_job_id }}"
+      register: login_status
+      until: login_status.finished
+      retries: 1800      # Wait up to 30 minutes
+      delay: 1
+
+    - name: Verify login succeeded
+      ansible.builtin.fail:
+        msg: "Codex login failed."
+      when: login_status.rc != 0
+
+    - name: Login completed
+      ansible.builtin.debug:
+        msg: "✅ Codex login completed successfully."

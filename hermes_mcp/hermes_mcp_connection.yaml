@@ -1,0 +1,60 @@
+---
+- name: Install Paperclip MCP in Hermes
+  hosts: servers
+  become: true
+
+  vars:
+    repo_url: "https://github.com/git-clone-abhinav/paperclip-mcp.git"
+    install_dir: "/opt/data/paperclip-mcp"
+
+  tasks:
+    - name: Ensure uuid was provided
+      ansible.builtin.assert:
+        that:
+          - uuid is defined
+          - uuid | length > 0
+        fail_msg: 'Please provide a UUID using -e "uuid=<container_uuid>"'
+
+    - name: Get Paperclip container information
+      community.docker.docker_container_info:
+        name: "paperclip_{{ uuid }}"
+      register: paperclip_info
+
+    - name: Get published Paperclip port
+      ansible.builtin.set_fact:
+        paperclip_port: >-
+          {{
+            paperclip_info.container.NetworkSettings.Ports['3100/tcp'][0].HostPort
+          }}
+
+    - name: Clone Paperclip MCP repository (if not already present)
+      ansible.builtin.command:
+        cmd: >
+          docker exec hermes_{{ uuid }}
+          sh -c "test -d {{ install_dir }} || git clone {{ repo_url }} {{ install_dir }}"
+
+    - name: Install npm dependencies
+      ansible.builtin.command:
+        cmd: >
+          docker exec hermes_{{ uuid }}
+          sh -c "cd {{ install_dir }} && npm install"
+
+    - name: Configure Paperclip MCP in Hermes
+      ansible.builtin.command:
+        cmd: >
+          docker exec hermes_{{ uuid }}
+          sh -c "grep -q 'paperclip:' /opt/data/config.yaml || cat >> /opt/data/config.yaml <<'EOF'
+
+          mcp_servers:
+            paperclip:
+              command: \"node\"
+              args:
+                - \"{{ install_dir }}/dist/index.js\"
+              env:
+                PAPERCLIP_API_BASE_URL: "http://192.168.255.72:{{ paperclip_port }}"
+                PAPERCLIP_API_KEY: \"{{ api }}\"
+          EOF"
+
+    - name: Restart Hermes container
+      ansible.builtin.command:
+        cmd: docker restart hermes_{{ uuid }}
